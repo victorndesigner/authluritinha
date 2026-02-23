@@ -10,7 +10,15 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID;
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET;
-const REDIRECT_URI = process.env.REDIRECT_URI; // ex: https://authluritinha.onrender.com/twitch-oauth-callback
+const REDIRECT_URI = process.env.REDIRECT_URI;
+
+// --- VALIDATION ---
+if (!TWITCH_CLIENT_ID || !REDIRECT_URI || !process.env.SUPABASE_URL) {
+    console.error('❌ [AUTH] Variáveis de ambiente faltando no Render! Verifique a aba Environment.');
+    console.log('ID:', TWITCH_CLIENT_ID ? '✅' : '❌');
+    console.log('URI:', REDIRECT_URI ? '✅' : '❌');
+    console.log('SUPA:', process.env.SUPABASE_URL ? '✅' : '❌');
+}
 
 // --- HEALTH CHECK ---
 app.get('/', (req, res) => {
@@ -131,6 +139,27 @@ app.get('/twitch-oauth-callback', async (req, res) => {
     }
 });
 
+// --- ENDPOINT: Remove um perfil permanentemente (usado pelo bot) ---
+app.delete('/profiles/:username', async (req, res) => {
+    const { secret } = req.query;
+    const { username } = req.params;
+
+    if (secret !== process.env.API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const { error } = await supabase
+            .from('twitch_auth_profiles')
+            .delete()
+            .eq('username', username);
+
+        if (error) throw error;
+        res.json({ success: true, message: `Perfil ${username} removido permanentemente.` });
+    } catch (err) {
+        console.error('[AUTH] Erro ao deletar:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- ENDPOINT: Lista perfis autorizados (usado pelo bot para atualizar) ---
 app.get('/profiles', async (req, res) => {
     const { secret } = req.query;
@@ -140,8 +169,11 @@ app.get('/profiles', async (req, res) => {
         .from('twitch_auth_profiles')
         .select('twitch_user_id, username, display_name, avatar, access_token, refresh_token, client_id, client_secret, created_at');
 
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ profiles: data });
+    if (error) {
+        console.error('[AUTH] Erro ao buscar perfis no Supabase:', error.message);
+        return res.status(500).json({ error: 'Erro no Banco de Dados', details: error.message });
+    }
+    res.json({ profiles: data || [] });
 });
 
 const PORT = process.env.PORT || 3000;
