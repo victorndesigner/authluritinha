@@ -10,7 +10,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID;
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET;
-const REDIRECT_URI = process.env.REDIRECT_URI; // ex: https://seu-projeto.onrender.com/callback
+const REDIRECT_URI = process.env.REDIRECT_URI; // ex: https://authluritinha.onrender.com/twitch-oauth-callback
 
 // --- HEALTH CHECK ---
 app.get('/', (req, res) => {
@@ -41,7 +41,7 @@ app.get('/authorize', (req, res) => {
 });
 
 // --- STEP 2: Callback da Twitch ---
-app.get('/callback', async (req, res) => {
+app.get('/twitch-oauth-callback', async (req, res) => {
     const { code, error } = req.query;
 
     if (error || !code) {
