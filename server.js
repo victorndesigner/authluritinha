@@ -138,6 +138,27 @@ app.get('/yt-profiles', async (req, res) => {
     res.json({ profiles: data || [] });
 });
 
+// --- ENDPOINT: Remove um perfil YouTube permanentemente ---
+app.delete('/yt-profiles/:channel_id', async (req, res) => {
+    const { secret } = req.query;
+    const { channel_id } = req.params;
+
+    if (secret !== process.env.API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const { error } = await supabase
+            .from('yt_auth_profiles')
+            .delete()
+            .eq('youtube_channel_id', channel_id);
+
+        if (error) throw error;
+        res.json({ success: true, message: `Perfil YouTube ${channel_id} removido permanentemente.` });
+    } catch (err) {
+        console.error('[YT-AUTH] Erro ao deletar:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- ENDPOINT: Refresh token YouTube ---
 app.post('/yt-refresh', async (req, res) => {
     const { secret, channel_id } = req.query;
