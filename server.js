@@ -24,18 +24,9 @@ if (!YT_CLIENT_ID || !YT_CLIENT_SECRET) {
     console.warn('⚠️ [AUTH] Variáveis YouTube faltando.');
 }
 
-// --- HEALTH CHECK / HOMEPAGE ---
+// --- HEALTH CHECK ---
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'termos', 'index.html'));
-});
-
-// --- TERMOS E PRIVACIDADE ---
-const path = require('path');
-app.get('/privacy', (req, res) => {
-    res.sendFile(path.join(__dirname, 'termos', 'privacidade.html'));
-});
-app.get('/terms', (req, res) => {
-    res.sendFile(path.join(__dirname, 'termos', 'termos.html'));
+    res.json({ status: 'ok', service: 'Luritinha Auth Server', time: new Date().toISOString() });
 });
 
 // --- YOUTUBE OAUTH ---
