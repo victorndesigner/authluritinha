@@ -128,7 +128,7 @@ app.get('/yt-callback', async (req, res) => {
 // --- ENDPOINT: Lista perfis YouTube autorizados ---
 app.get('/yt-profiles', async (req, res) => {
     const { secret } = req.query;
-    if (secret !== process.env.API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+    if (secret !== process.env.TWITCH_AUTH_SECRET) return res.status(401).json({ error: 'Unauthorized' });
 
     const { data, error } = await supabase
         .from('yt_auth_profiles')
@@ -143,7 +143,7 @@ app.delete('/yt-profiles/:channel_id', async (req, res) => {
     const { secret } = req.query;
     const { channel_id } = req.params;
 
-    if (secret !== process.env.API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+    if (secret !== process.env.TWITCH_AUTH_SECRET) return res.status(401).json({ error: 'Unauthorized' });
 
     try {
         const { error } = await supabase
@@ -162,7 +162,7 @@ app.delete('/yt-profiles/:channel_id', async (req, res) => {
 // --- ENDPOINT: Refresh token YouTube ---
 app.post('/yt-refresh', async (req, res) => {
     const { secret, channel_id } = req.query;
-    if (secret !== process.env.API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+    if (secret !== process.env.TWITCH_AUTH_SECRET) return res.status(401).json({ error: 'Unauthorized' });
 
     try {
         const { data: profile, error } = await supabase
@@ -314,7 +314,7 @@ app.delete('/profiles/:username', async (req, res) => {
     const { secret } = req.query;
     const { username } = req.params;
 
-    if (secret !== process.env.API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+    if (secret !== process.env.TWITCH_AUTH_SECRET) return res.status(401).json({ error: 'Unauthorized' });
 
     try {
         const { error } = await supabase
@@ -333,7 +333,7 @@ app.delete('/profiles/:username', async (req, res) => {
 // --- ENDPOINT: Lista perfis autorizados (usado pelo bot para atualizar) ---
 app.get('/profiles', async (req, res) => {
     const { secret } = req.query;
-    if (secret !== process.env.API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+    if (secret !== process.env.TWITCH_AUTH_SECRET) return res.status(401).json({ error: 'Unauthorized' });
 
     const { data, error } = await supabase
         .from('twitch_auth_profiles')
