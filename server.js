@@ -32,15 +32,33 @@ app.get('/', (req, res) => {
 // --- YOUTUBE OAUTH ---
 app.get('/yt-authorize', (req, res) => {
     if (!YT_CLIENT_ID) return res.status(500).send('YouTube Client ID não configurado.');
+    const { guild } = req.query;
+    if (!guild) return res.status(400).send('ID do Servidor (guild) é obrigatório.');
+
     const scopes = [
         'https://www.googleapis.com/auth/youtube.readonly'
     ].join(' ');
-    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${YT_CLIENT_ID}&redirect_uri=${encodeURIComponent(YT_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent`;
+
+    const state = JSON.stringify({ guild });
+
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${YT_CLIENT_ID}&redirect_uri=${encodeURIComponent(YT_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent&state=${encodeURIComponent(state)}`;
     res.redirect(url);
 });
 
 app.get('/yt-callback', async (req, res) => {
-    const { code, error } = req.query;
+    const { code, error, state } = req.query;
+
+    let guild_id = null;
+    try {
+        if (state) {
+            const stateObj = JSON.parse(state);
+            guild_id = stateObj.guild;
+        }
+    } catch (e) { }
+
+    if (!guild_id) {
+        return res.status(400).send('Estado inválido: ID do servidor não encontrado.');
+    }
 
     if (error || !code) {
         return res.status(400).send(`
@@ -86,12 +104,13 @@ app.get('/yt-callback', async (req, res) => {
             access_token,
             refresh_token: refresh_token || null,
             expires_at: new Date(Date.now() + (expires_in * 1000)).toISOString(),
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            guild_id: guild_id
         };
 
         const { error: dbError } = await supabase
             .from('yt_auth_profiles')
-            .upsert(profileData, { onConflict: 'youtube_channel_id' });
+            .upsert(profileData, { onConflict: 'youtube_channel_id, guild_id' });
 
         if (dbError) throw dbError;
 
@@ -127,12 +146,14 @@ app.get('/yt-callback', async (req, res) => {
 
 // --- ENDPOINT: Lista perfis YouTube autorizados ---
 app.get('/yt-profiles', async (req, res) => {
-    const { secret } = req.query;
+    const { secret, guild } = req.query;
     if (secret !== process.env.TWITCH_AUTH_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+    if (!guild) return res.status(400).json({ error: 'Guild ID is required' });
 
     const { data, error } = await supabase
         .from('yt_auth_profiles')
-        .select('youtube_channel_id, title, avatar, custom_url, subscriber_count, video_count, access_token, refresh_token, expires_at');
+        .select('youtube_channel_id, title, avatar, custom_url, subscriber_count, video_count, access_token, refresh_token, expires_at')
+        .eq('guild_id', guild);
 
     if (error) return res.status(500).json({ error: error.message });
     res.json({ profiles: data || [] });
@@ -140,16 +161,18 @@ app.get('/yt-profiles', async (req, res) => {
 
 // --- ENDPOINT: Remove um perfil YouTube permanentemente ---
 app.delete('/yt-profiles/:channel_id', async (req, res) => {
-    const { secret } = req.query;
+    const { secret, guild } = req.query;
     const { channel_id } = req.params;
 
     if (secret !== process.env.TWITCH_AUTH_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+    if (!guild) return res.status(400).json({ error: 'Guild ID is required' });
 
     try {
         const { error } = await supabase
             .from('yt_auth_profiles')
             .delete()
-            .eq('youtube_channel_id', channel_id);
+            .eq('youtube_channel_id', channel_id)
+            .eq('guild_id', guild);
 
         if (error) throw error;
         res.json({ success: true, message: `Perfil YouTube ${channel_id} removido permanentemente.` });
@@ -161,14 +184,16 @@ app.delete('/yt-profiles/:channel_id', async (req, res) => {
 
 // --- ENDPOINT: Refresh token YouTube ---
 app.post('/yt-refresh', async (req, res) => {
-    const { secret, channel_id } = req.query;
+    const { secret, channel_id, guild } = req.query;
     if (secret !== process.env.TWITCH_AUTH_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+    if (!guild) return res.status(400).json({ error: 'Guild ID is required' });
 
     try {
         const { data: profile, error } = await supabase
             .from('yt_auth_profiles')
             .select('refresh_token')
             .eq('youtube_channel_id', channel_id)
+            .eq('guild_id', guild)
             .single();
 
         if (error || !profile?.refresh_token) return res.status(404).json({ error: 'Perfil não encontrado ou sem refresh token.' });
@@ -186,7 +211,7 @@ app.post('/yt-refresh', async (req, res) => {
             access_token,
             expires_at: new Date(Date.now() + (expires_in * 1000)).toISOString(),
             updated_at: new Date().toISOString()
-        }).eq('youtube_channel_id', channel_id);
+        }).eq('youtube_channel_id', channel_id).eq('guild_id', guild);
 
         res.json({ access_token, expires_in });
     } catch (err) {
@@ -198,10 +223,9 @@ app.post('/yt-refresh', async (req, res) => {
 // --- STEP 1: Inicia o OAuth ---
 // O bot Discord gera este link e exibe como botão "Autorizar"
 app.get('/authorize', (req, res) => {
-    // Scopes necessários:
-    // channel:read:subscriptions → ver quem é sub
-    // user:read:email → dados do usuário
-    // moderator:read:followers → ver seguidores
+    const { guild } = req.query;
+    if (!guild) return res.status(400).send('ID do Servidor (guild) é obrigatório.');
+
     const scopes = [
         'channel:read:subscriptions',
         'user:read:email',
@@ -209,18 +233,33 @@ app.get('/authorize', (req, res) => {
         'bits:read'
     ].join(' ');
 
+    const state = JSON.stringify({ guild });
+
     const url = `https://id.twitch.tv/oauth2/authorize?`
         + `client_id=${TWITCH_CLIENT_ID}`
         + `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`
         + `&response_type=code`
-        + `&scope=${encodeURIComponent(scopes)}`;
+        + `&scope=${encodeURIComponent(scopes)}`
+        + `&state=${encodeURIComponent(state)}`;
 
     res.redirect(url);
 });
 
 // --- STEP 2: Callback da Twitch ---
 app.get('/twitch-oauth-callback', async (req, res) => {
-    const { code, error } = req.query;
+    const { code, error, state } = req.query;
+
+    let guild_id = null;
+    try {
+        if (state) {
+            const stateObj = JSON.parse(state);
+            guild_id = stateObj.guild;
+        }
+    } catch (e) { }
+
+    if (!guild_id) {
+        return res.status(400).send('Estado inválido: ID do servidor não encontrado.');
+    }
 
     if (error || !code) {
         return res.status(400).send(`
@@ -270,12 +309,13 @@ app.get('/twitch-oauth-callback', async (req, res) => {
             client_id: TWITCH_CLIENT_ID,
             client_secret: TWITCH_CLIENT_SECRET,
             created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            guild_id: guild_id
         };
 
         const { error: dbError } = await supabase
             .from('twitch_auth_profiles')
-            .upsert(profileData, { onConflict: 'twitch_user_id' });
+            .upsert(profileData, { onConflict: 'twitch_user_id, guild_id' });
 
         if (dbError) throw dbError;
 
@@ -311,16 +351,18 @@ app.get('/twitch-oauth-callback', async (req, res) => {
 
 // --- ENDPOINT: Remove um perfil permanentemente (usado pelo bot) ---
 app.delete('/profiles/:username', async (req, res) => {
-    const { secret } = req.query;
+    const { secret, guild } = req.query;
     const { username } = req.params;
 
     if (secret !== process.env.TWITCH_AUTH_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+    if (!guild) return res.status(400).json({ error: 'Guild ID is required' });
 
     try {
         const { error } = await supabase
             .from('twitch_auth_profiles')
             .delete()
-            .eq('username', username);
+            .eq('username', username)
+            .eq('guild_id', guild);
 
         if (error) throw error;
         res.json({ success: true, message: `Perfil ${username} removido permanentemente.` });
@@ -332,12 +374,14 @@ app.delete('/profiles/:username', async (req, res) => {
 
 // --- ENDPOINT: Lista perfis autorizados (usado pelo bot para atualizar) ---
 app.get('/profiles', async (req, res) => {
-    const { secret } = req.query;
+    const { secret, guild } = req.query;
     if (secret !== process.env.TWITCH_AUTH_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+    if (!guild) return res.status(400).json({ error: 'Guild ID is required' });
 
     const { data, error } = await supabase
         .from('twitch_auth_profiles')
-        .select('twitch_user_id, username, display_name, avatar, access_token, refresh_token, client_id, client_secret, created_at');
+        .select('twitch_user_id, username, display_name, avatar, access_token, refresh_token, client_id, client_secret, created_at')
+        .eq('guild_id', guild);
 
     if (error) {
         console.error('[AUTH] Erro ao buscar perfis no Supabase:', error.message);
